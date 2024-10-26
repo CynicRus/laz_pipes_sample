@@ -37,6 +37,7 @@ type
     FMutex: THandle;
     FEvent: THandle;
     {$ENDIF}
+    function IsDataAvailable: boolean;virtual;
   public
     constructor Create(Mode: TPipeMode);
     destructor Destroy; override;
@@ -64,6 +65,7 @@ type
   private
     FReadHandle: THandle;
     FWriteHandle: THandle;
+    function IsDataAvailable: boolean;override;
   public
     constructor Create(Mode: TPipeMode); overload;
     destructor Destroy; override;
@@ -75,6 +77,26 @@ type
 implementation
 
 { TPipeStream }
+
+function TPipeStream.IsDataAvailable: boolean;
+  {$IFDEF UNIX}
+var
+  fds: TFDSet;
+  tv: TTimeVal;
+  {$ENDIF}
+begin
+  {$IFDEF WINDOWS}
+  Result := PeekNamedPipe(FHandle, nil, 0, nil, nil, nil);
+  {$ENDIF}
+
+  {$IFDEF UNIX}
+  fpfd_zero(fds);
+  fpfd_set(FHandle, fds);
+  tv.tv_sec := 0;
+  tv.tv_usec := 0;
+  Result := fpSelect(FHandle + 1, @fds, nil, nil, @tv) > 0;
+  {$ENDIF}
+end;
 
 constructor TPipeStream.Create(Mode: TPipeMode);
   {$IFDEF WINDOWS}
@@ -131,13 +153,19 @@ begin
 end;
 
 function TPipeStream.WaitForData(Timeout: DWORD): boolean;
-  {$IFDEF UNIX}
+{$IFDEF UNIX}
 var
-fds: TFDSet;
-tv: TTimeVal;
-  {$ENDIF}
+  fds: TFDSet;
+  tv: TTimeVal;
+{$ENDIF}
 begin
   FState := StateReading;
+
+  if IsDataAvailable then
+  begin
+    Result := True;
+    Exit;
+  end;
 
   {$IFDEF WINDOWS}
   WaitForSingleObject(FMutex, INFINITE);
@@ -150,8 +178,8 @@ begin
   {$ENDIF}
 
   {$IFDEF UNIX}
-   EnterCriticalSection(FMutex);
-   try
+  EnterCriticalSection(FMutex);
+  try
     fpfd_zero(fds);
     fpfd_set(FHandle, fds);
     tv.tv_sec := Timeout div 1000;
@@ -352,6 +380,29 @@ end;
 
 { TAnonymousPipeStream }
 
+function TAnonymousPipeStream.IsDataAvailable: boolean;
+  {$IFDEF UNIX}
+var
+  fds: TFDSet;
+  tv: TTimeVal;
+  {$ENDIF}
+begin
+  if FMode in [pmReceiver,pmBoth] then
+  begin
+  {$IFDEF WINDOWS}
+  Result := PeekNamedPipe(FReadHandle, nil, 0, nil, nil, nil);
+  {$ENDIF}
+
+  {$IFDEF UNIX}
+  fpfd_zero(fds);
+  fpfd_set(FHandle, fds);
+  tv.tv_sec := 0;
+  tv.tv_usec := 0;
+  Result := fpSelect(FHandle + 1, @fds, nil, nil, @tv) > 0;
+  {$ENDIF}
+  end;
+end;
+
 constructor TAnonymousPipeStream.Create(Mode: TPipeMode);
 var
   {$IFDEF UNIX}
@@ -506,6 +557,12 @@ var
 begin
   if FMode = pmSender then
     raise EUnsupportedOperation.Create('Cannot wait for data in sender mode');
+
+  if IsDataAvailable then
+  begin
+    Result := True;
+    Exit;
+  end;
 
   {$IFDEF WINDOWS}
   WaitForSingleObject(FMutex, INFINITE);
