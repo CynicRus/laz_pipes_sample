@@ -161,12 +161,6 @@ var
 begin
   FState := StateReading;
 
-  if IsDataAvailable then
-  begin
-    Result := True;
-    Exit;
-  end;
-
   {$IFDEF WINDOWS}
   WaitForSingleObject(FMutex, INFINITE);
   try
@@ -189,6 +183,9 @@ begin
     LeaveCriticalSection(FMutex);
   end;
   {$ENDIF}
+
+   if IsDataAvailable then
+    Result := True;
 
   if Result then
     FState := StateHaveData
@@ -558,12 +555,6 @@ begin
   if FMode = pmSender then
     raise EUnsupportedOperation.Create('Cannot wait for data in sender mode');
 
-  if IsDataAvailable then
-  begin
-    Result := True;
-    Exit;
-  end;
-
   {$IFDEF WINDOWS}
   WaitForSingleObject(FMutex, INFINITE);
   try
@@ -586,6 +577,9 @@ begin
     LeaveCriticalSection(FMutex);
   end;
   {$ENDIF}
+
+  if IsDataAvailable then
+    Result := True;
 
   if Result then
     FState := StateHaveData
